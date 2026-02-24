@@ -543,18 +543,14 @@ esp_err_t trigger_image_rotation(void)
             display_manager_show_image(saved_bmp_path);
             result = ESP_OK;
         } else {
-#ifdef CONFIG_HAS_SDCARD
-            ESP_LOGE(TAG, "Failed to download image from URL, falling back to SD card rotation");
+            ESP_LOGE(TAG, "Failed to download image from URL, falling back to local rotation");
             display_manager_rotate_from_sdcard();
-#endif
             result = ESP_FAIL;
         }
-#ifdef CONFIG_HAS_SDCARD
     } else {
-        // SD card mode - rotate through albums
+        // Local storage mode - rotate through albums
         display_manager_rotate_from_sdcard();
         result = ESP_OK;
-#endif
     }
 
     return result;

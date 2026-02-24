@@ -172,11 +172,6 @@ esp_err_t config_manager_init(void)
         uint8_t stored_mode = ROTATION_MODE_SDCARD;
         if (nvs_get_u8(nvs_handle, NVS_ROTATION_MODE_KEY, &stored_mode) == ESP_OK) {
             rotation_mode = (rotation_mode_t) stored_mode;
-#ifndef CONFIG_HAS_SDCARD
-            if (rotation_mode == ROTATION_MODE_SDCARD) {
-                rotation_mode = ROTATION_MODE_URL;
-            }
-#endif
             ESP_LOGI(TAG, "Loaded rotation mode from NVS: %s",
                      rotation_mode == ROTATION_MODE_URL ? "url" : "sdcard");
         }
@@ -603,12 +598,6 @@ bool config_manager_is_in_sleep_schedule(void)
 
 void config_manager_set_rotation_mode(rotation_mode_t mode)
 {
-#ifndef CONFIG_HAS_SDCARD
-    if (mode == ROTATION_MODE_SDCARD) {
-        ESP_LOGE(TAG, "Cannot set rotation mode to SDCARD: SD card not supported");
-        return;
-    }
-#endif
     rotation_mode = mode;
 
     nvs_handle_t nvs_handle;

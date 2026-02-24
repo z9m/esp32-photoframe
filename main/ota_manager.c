@@ -10,6 +10,7 @@
 #include "esp_crt_bundle.h"
 #include "esp_http_client.h"
 #include "esp_https_ota.h"
+#include "esp_idf_version.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
 #include "esp_timer.h"
@@ -123,12 +124,16 @@ static esp_err_t http_event_handler(esp_http_client_event_t *evt)
     case HTTP_EVENT_REDIRECT:
         ESP_LOGD(TAG, "HTTP_EVENT_REDIRECT");
         break;
+#ifdef HTTP_EVENT_ON_HEADERS_COMPLETE
     case HTTP_EVENT_ON_HEADERS_COMPLETE:
         ESP_LOGD(TAG, "HTTP_EVENT_ON_HEADERS_COMPLETE");
         break;
+#endif
+#ifdef HTTP_EVENT_ON_STATUS_CODE
     case HTTP_EVENT_ON_STATUS_CODE:
         ESP_LOGD(TAG, "HTTP_EVENT_ON_STATUS_CODE");
         break;
+#endif
     }
     return ESP_OK;
 }

@@ -5,6 +5,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "album_manager.h"
 #include "board_hal.h"
 #include "color_palette.h"
 #include "config.h"
@@ -12,6 +13,7 @@
 #include "display_manager.h"
 #include "driver/gpio.h"
 #include "esp_heap_caps.h"
+#include "esp_littlefs.h"
 #include "esp_log.h"
 #include "esp_sntp.h"
 #include "esp_system.h"
@@ -29,13 +31,46 @@
 #include "utils.h"
 #include "wifi_manager.h"
 #include "wifi_provisioning.h"
-
 #ifdef CONFIG_HAS_SDCARD
-#include "album_manager.h"
 #include "sdcard.h"
 #endif
 
 static const char *TAG = "main";
+
+static esp_err_t mount_littlefs(void)
+{
+    ESP_LOGI(TAG, "Initializing LittleFS");
+
+    esp_vfs_littlefs_conf_t conf = {
+        .base_path = TEMP_MOUNT_POINT,
+        .partition_label = "storage",
+        .format_if_mount_failed = true,
+        .dont_mount = false,
+    };
+
+    esp_err_t ret = esp_vfs_littlefs_register(&conf);
+
+    if (ret != ESP_OK) {
+        if (ret == ESP_FAIL) {
+            ESP_LOGE(TAG, "Failed to mount or format filesystem");
+        } else if (ret == ESP_ERR_NOT_FOUND) {
+            ESP_LOGE(TAG, "Failed to find LittleFS partition");
+        } else {
+            ESP_LOGE(TAG, "Failed to initialize LittleFS (%s)", esp_err_to_name(ret));
+        }
+        return ret;
+    }
+
+    size_t total = 0, used = 0;
+    ret = esp_littlefs_info(conf.partition_label, &total, &used);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to get LittleFS partition information (%s)", esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(TAG, "Partition size: total: %d, used: %d", total, used);
+    }
+
+    return ESP_OK;
+}
 
 // Periodic callback for SNTP sync
 static esp_err_t sntp_sync_periodic_callback(void)
@@ -261,6 +296,8 @@ void deep_sleep_wake_main(void)
     // Won't reach here after sleep
 }
 
+bool g_littlefs_mounted = false;
+
 void app_main(void)
 {
     // Check reset reason to detect crashes
@@ -308,15 +345,24 @@ void app_main(void)
     ESP_LOGI(TAG, "Power HAL initialized");
 
 #ifndef CONFIG_HAS_SDCARD
-    // Initialize RAM filesystem for temporary images
-    ESP_LOGI(TAG, "Mounting RAM filesystem...");
-    ESP_ERROR_CHECK(memfs_mount(TEMP_MOUNT_POINT, 10));
+    if (mount_littlefs() == ESP_OK) {
+        g_littlefs_mounted = true;
+    } else {
+        ESP_LOGW(TAG, "LittleFS mount failed, mounting MemFS at %s for temporary storage",
+                 TEMP_MOUNT_POINT);
+        ESP_ERROR_CHECK(memfs_mount(TEMP_MOUNT_POINT, 10));
+    }
 #else
     if (!sdcard_is_mounted()) {
-        ESP_LOGW(TAG, "SD Card not mounted, mounting MemFS at %s for temporary storage",
-                 TEMP_MOUNT_POINT);
-        // Mount MemFS at same path to allow temporary operations (upload/display)
-        ESP_ERROR_CHECK(memfs_mount(TEMP_MOUNT_POINT, 10));
+        ESP_LOGW(TAG, "SD Card not mounted. Attempting LittleFS fallback...");
+        if (mount_littlefs() == ESP_OK) {
+            g_littlefs_mounted = true;
+        } else {
+            ESP_LOGW(TAG, "LittleFS mount failed, mounting MemFS at %s for temporary storage",
+                     TEMP_MOUNT_POINT);
+            // Mount MemFS at same path to allow temporary operations (upload/display)
+            ESP_ERROR_CHECK(memfs_mount(TEMP_MOUNT_POINT, 10));
+        }
     }
 #endif
 
@@ -406,11 +452,7 @@ void app_main(void)
 
     ESP_ERROR_CHECK(ota_manager_init());
 
-#ifdef CONFIG_HAS_SDCARD
     ESP_ERROR_CHECK(album_manager_init());
-#else
-    ESP_LOGI(TAG, "SD Card support disabled (No-SDCard Mode)");
-#endif
 
     // Check wake-up source
     wakeup_source_t wakeup_src = power_manager_get_wakeup_source();

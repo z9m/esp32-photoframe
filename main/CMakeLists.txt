@@ -45,6 +45,7 @@ set(PRIV_REQUIRES
     memfs
     nvs_flash
     sdcard
+    espressif__zlib
 )
 
 idf_component_register(
