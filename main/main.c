@@ -37,6 +37,7 @@
 
 static const char *TAG = "main";
 
+#ifdef CONFIG_USE_INTERNAL_FLASH_STORAGE
 static esp_err_t mount_littlefs(void)
 {
     ESP_LOGI(TAG, "Initializing LittleFS");
@@ -71,6 +72,7 @@ static esp_err_t mount_littlefs(void)
 
     return ESP_OK;
 }
+#endif
 
 // Periodic callback for SNTP sync
 static esp_err_t sntp_sync_periodic_callback(void)
@@ -345,20 +347,26 @@ void app_main(void)
     ESP_LOGI(TAG, "Power HAL initialized");
 
 #ifndef CONFIG_HAS_SDCARD
+#ifdef CONFIG_USE_INTERNAL_FLASH_STORAGE
     if (mount_littlefs() == ESP_OK) {
         g_littlefs_mounted = true;
-    } else {
-        ESP_LOGW(TAG, "LittleFS mount failed, mounting MemFS at %s for temporary storage",
+    } else
+#endif
+    {
+        ESP_LOGW(TAG, "LittleFS disabled/failed, mounting MemFS at %s for temporary storage",
                  TEMP_MOUNT_POINT);
         ESP_ERROR_CHECK(memfs_mount(TEMP_MOUNT_POINT, 10));
     }
 #else
     if (!sdcard_is_mounted()) {
+#ifdef CONFIG_USE_INTERNAL_FLASH_STORAGE
         ESP_LOGW(TAG, "SD Card not mounted. Attempting LittleFS fallback...");
         if (mount_littlefs() == ESP_OK) {
             g_littlefs_mounted = true;
-        } else {
-            ESP_LOGW(TAG, "LittleFS mount failed, mounting MemFS at %s for temporary storage",
+        } else
+#endif
+        {
+            ESP_LOGW(TAG, "LittleFS disabled/failed, mounting MemFS at %s for temporary storage",
                      TEMP_MOUNT_POINT);
             // Mount MemFS at same path to allow temporary operations (upload/display)
             ESP_ERROR_CHECK(memfs_mount(TEMP_MOUNT_POINT, 10));
