@@ -4,10 +4,13 @@
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
 #include "epaper.h"
+#include "esp_adc/adc_cali.h"
+#include "esp_adc/adc_cali_scheme.h"
 #include "esp_adc/adc_oneshot.h"
 #include "esp_log.h"
 #include "esp_sleep.h"
 #include "soc/soc_caps.h"
+#include "soc/usb_serial_jtag_reg.h"
 
 static const char *TAG = "board_hal_ee02";
 
@@ -18,17 +21,15 @@ static const char *TAG = "board_hal_ee02";
 // factor 2) D0/GPIO1 is A0
 #define VBAT_ADC_CHANNEL ADC_CHANNEL_0  // GPIO 1 is ADC1_CHANNEL_0
 #define VBAT_VOLTAGE_DIVIDER 2.0f
+#define VBAT_EN_GPIO GPIO_NUM_6  // GPIO 6 enables battery divider on XIAO EE-series boards
 
-// USB detection (VBUS)
-// Standard XIAO S3 detects VBUS via GPIO? Or rely on internal USB serial?
-// For now, simpler approach: assume USB connected if we can print to log?
-// Actually, BQ24070 has PGOOD / CHG outputs but they might not be wired to GPIOs on the shield.
-// Let's rely on empirical behavior or assume always connected for now if not defined.
-// NOTE: EE02 schematic shows:
-// BAT_ADC -> GPIO 1 (D0/A0)
-// No direct VBUS GPIO shown on simple schematic, often internal or not wired.
+#ifndef BOARD_HAL_EPD_CS1_PIN
+#define BOARD_HAL_EPD_CS1_PIN GPIO_NUM_NC
+#endif
 
 static adc_oneshot_unit_handle_t adc_handle = NULL;
+static adc_cali_handle_t adc_cali_handle = NULL;
+static bool adc_cali_enabled = false;
 
 esp_err_t board_hal_init(void)
 {
@@ -58,6 +59,17 @@ esp_err_t board_hal_init(void)
     };
     epaper_init(&ep_cfg);
 
+    // Initialize Battery Enable Pin
+    gpio_config_t io_conf = {
+        .intr_type = GPIO_INTR_DISABLE,
+        .mode = GPIO_MODE_OUTPUT,
+        .pin_bit_mask = (1ULL << VBAT_EN_GPIO),
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+    };
+    gpio_config(&io_conf);
+    gpio_set_level(VBAT_EN_GPIO, 0);  // Disable by default
+
     // Initialize ADC for battery voltage
     adc_oneshot_unit_init_cfg_t init_config = {
         .unit_id = ADC_UNIT_1,
@@ -69,14 +81,29 @@ esp_err_t board_hal_init(void)
         return ret;
     }
 
-    adc_oneshot_chan_cfg_t config = {
+    adc_oneshot_chan_cfg_t adc_config = {
         .bitwidth = ADC_BITWIDTH_DEFAULT,
         .atten = ADC_ATTEN_DB_12,  // 11dB or 12dB for full range (up to ~3.3V)
     };
-    ret = adc_oneshot_config_channel(adc_handle, VBAT_ADC_CHANNEL, &config);
+    ret = adc_oneshot_config_channel(adc_handle, VBAT_ADC_CHANNEL, &adc_config);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "ADC channel config failed: %s", esp_err_to_name(ret));
         return ret;
+    }
+
+    // Initialize ADC calibration
+    adc_cali_curve_fitting_config_t cali_config = {
+        .unit_id = ADC_UNIT_1,
+        .chan = VBAT_ADC_CHANNEL,
+        .atten = ADC_ATTEN_DB_12,
+        .bitwidth = ADC_BITWIDTH_DEFAULT,
+    };
+    esp_err_t cali_ret = adc_cali_create_scheme_curve_fitting(&cali_config, &adc_cali_handle);
+    if (cali_ret == ESP_OK) {
+        adc_cali_enabled = true;
+        ESP_LOGI(TAG, "ADC calibration initialization successful");
+    } else {
+        ESP_LOGW(TAG, "ADC calibration initialization failed: %s", esp_err_to_name(cali_ret));
     }
 
     return ESP_OK;
@@ -90,6 +117,10 @@ esp_err_t board_hal_prepare_for_sleep(void)
 
     // Disable ADC to save power
     if (adc_handle) {
+        if (adc_cali_enabled) {
+            adc_cali_delete_scheme_curve_fitting(adc_cali_handle);
+            adc_cali_enabled = false;
+        }
         adc_oneshot_del_unit(adc_handle);
         adc_handle = NULL;
     }
@@ -106,13 +137,38 @@ int board_hal_get_battery_voltage(void)
     if (!adc_handle)
         return -1;
 
-    int adc_raw;
-    if (adc_oneshot_read(adc_handle, VBAT_ADC_CHANNEL, &adc_raw) == ESP_OK) {
-        // Crude conversion without calibration curve for now.
-        // ADC_ATTEN_DB_11 is roughly 3.3V full scale at 4096 (12bit).
-        // Voltage = raw * (3300 / 4095) * divider
-        float voltage_mv = (float) adc_raw * (3300.0f / 4095.0f) * VBAT_VOLTAGE_DIVIDER;
-        return (int) voltage_mv;
+    // Enable voltage divider
+    gpio_set_level(VBAT_EN_GPIO, 1);
+    vTaskDelay(pdMS_TO_TICKS(20));
+
+    // Take multiple samples to average out noise
+    const int num_samples = 16;
+    int32_t total_mv = 0;
+    int samples_count = 0;
+
+    for (int i = 0; i < num_samples; i++) {
+        int adc_raw;
+        if (adc_oneshot_read(adc_handle, VBAT_ADC_CHANNEL, &adc_raw) == ESP_OK) {
+            int voltage_mv;
+            if (adc_cali_enabled) {
+                adc_cali_raw_to_voltage(adc_cali_handle, adc_raw, &voltage_mv);
+            } else {
+                voltage_mv = adc_raw * 3300 / 4095;
+            }
+            total_mv += voltage_mv;
+            samples_count++;
+        }
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
+
+    // Disable voltage divider to save power
+    gpio_set_level(VBAT_EN_GPIO, 0);
+
+    if (samples_count > 0) {
+        int avg_mv = (int) (total_mv / samples_count);
+        int final_vbat_mv = (int) (avg_mv * VBAT_VOLTAGE_DIVIDER);
+        ESP_LOGD(TAG, "Battery voltage: %d mV (avg from %d samples)", final_vbat_mv, samples_count);
+        return final_vbat_mv;
     }
     return -1;
 }
@@ -142,9 +198,24 @@ bool board_hal_is_charging(void)
 
 bool board_hal_is_usb_connected(void)
 {
-    // TODO: Check VBUS or USB peripheral status.
-    // For now returning true ensures logic doesn't aggressively sleep if debugging.
-    return true;
+    // 1. Check if USB host is connected by monitoring USB Serial JTAG frame counter
+    static uint32_t last_frame_num = 0;
+    uint32_t current_frame_num = REG_READ(USB_SERIAL_JTAG_FRAM_NUM_REG);
+
+    if (current_frame_num != last_frame_num) {
+        last_frame_num = current_frame_num;
+        return true;
+    }
+
+    // 2. Secondary check: Battery voltage threshold
+    int voltage = board_hal_get_battery_voltage();
+    bool usb_by_voltage = (voltage > 4120);
+
+    if (usb_by_voltage) {
+        ESP_LOGD(TAG, "USB likely connected (voltage: %d mV)", voltage);
+    }
+
+    return usb_by_voltage;
 }
 
 void board_hal_shutdown(void)

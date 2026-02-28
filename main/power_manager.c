@@ -288,13 +288,9 @@ esp_err_t power_manager_init(void)
     gpio_set_level(LED_RED_GPIO, deep_sleep_enabled ? 0 : 1);  // active-low
     gpio_set_level(LED_GREEN_GPIO, 1);                         // Turn off green LED (active-low)
 
-    // Skip auto-sleep timer if woken by ROTATE button or timer (image generation can take >120s)
-    if (wakeup_source == WAKEUP_SOURCE_ROTATE_BUTTON ||
-        wakeup_source == WAKEUP_SOURCE_CLEAR_BUTTON || wakeup_source == WAKEUP_SOURCE_TIMER) {
-        ESP_LOGI(TAG, "Woken by ROTATE button, KEY button or timer, disabling auto-sleep timer");
-    } else {
-        xTaskCreate(sleep_timer_task, "sleep_timer", 4096, NULL, 5, &sleep_timer_task_handle);
-    }
+    // Always create sleep timer task. The task itself handles USB connection and deep sleep enabled
+    // checks.
+    xTaskCreate(sleep_timer_task, "sleep_timer", 4096, NULL, 5, &sleep_timer_task_handle);
     xTaskCreate(rotation_timer_task, "rotation_timer", 16384, NULL, 5, &rotation_timer_task_handle);
 
     power_manager_enable_auto_light_sleep();
