@@ -267,7 +267,9 @@ static esp_err_t parse_multipart_upload(httpd_req_t *req, const char *base_dir,
                         if (require_png) {
                             // Check PNG extension for image field
                             char *ext = strrchr(result->original_filename, '.');
-                            if (!ext || (strcasecmp(ext, ".png") != 0 && strcasecmp(ext, ".gz") != 0 && strcasecmp(ext, ".epd") != 0)) {
+                            if (!ext ||
+                                (strcasecmp(ext, ".png") != 0 && strcasecmp(ext, ".gz") != 0 &&
+                                 strcasecmp(ext, ".epd") != 0)) {
                                 if (fp)
                                     fclose(fp);
                                 free(buf);
