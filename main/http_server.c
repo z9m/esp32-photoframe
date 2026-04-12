@@ -1619,7 +1619,7 @@ static esp_err_t rotate_handler(httpd_req_t *req)
     power_manager_reset_sleep_timer();
 
     // Synchronous rotation as requested by maintainer
-    trigger_image_rotation();
+    trigger_image_rotation(1);
     ha_notify_update();
 
     cJSON *response = cJSON_CreateObject();
