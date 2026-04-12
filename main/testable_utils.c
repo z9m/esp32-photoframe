@@ -133,6 +133,15 @@ int calculate_next_wakeup_interval(time_t now, const rotation_config_t *rot_conf
     localtime_r(&now, &tm_now);
     int current_min = tm_now.tm_hour * 60 + tm_now.tm_min;
 
+    // Helper variables to gracefully handle Daily mode as a 24h anchored interval
+    bool is_anchored = rot_config->use_anchor || rot_config->mode == AR_MODE_DAILY;
+    int interval_sec = rot_config->mode == AR_MODE_DAILY ? 86400 : rot_config->interval_sec;
+
+    // Prevent division by zero if config is invalid
+    if (interval_sec <= 0) {
+        interval_sec = 86400;
+    }
+
     // 1. If we are currently in sleep schedule, we must wake up at or after sleep_end
     if (is_in_sleep_schedule(current_min, sleep_schedule)) {
         int minutes_until_end;
@@ -143,7 +152,7 @@ int calculate_next_wakeup_interval(time_t now, const rotation_config_t *rot_conf
         }
         time_t end_of_sleep = now + (minutes_until_end * 60 - tm_now.tm_sec);
 
-        if (!rot_config->use_anchor) {
+        if (!is_anchored) {
             return (int) (end_of_sleep - now);
         }
 
@@ -155,21 +164,21 @@ int calculate_next_wakeup_interval(time_t now, const rotation_config_t *rot_conf
         tm_end.tm_sec = 0;
         time_t anchor_ts = mktime(&tm_end);
         if (anchor_ts > end_of_sleep) {
-            anchor_ts -= 86400;
+            anchor_ts -=
+                86400;  // Step back to the most recent anchor before or exactly at end_of_sleep
         }
 
         long seconds_since_anchor = (long) (end_of_sleep - anchor_ts);
-        long intervals =
-            (seconds_since_anchor + rot_config->interval_sec - 1) / rot_config->interval_sec;
-        time_t first_slot = anchor_ts + (intervals * rot_config->interval_sec);
+        long intervals = (seconds_since_anchor + interval_sec - 1) / interval_sec;
+        time_t first_slot = anchor_ts + (intervals * interval_sec);
         return (int) (first_slot - now);
     }
 
     // 2. Calculate raw seconds until next rotation slot
     int seconds_until_rotation = 0;
-    if (!rot_config->use_anchor) {
+    if (!is_anchored) {
         // Relative mode: always a full interval
-        seconds_until_rotation = rot_config->interval_sec;
+        seconds_until_rotation = interval_sec;
     } else {
         // Anchored mode: align to wall clock slots
         struct tm tm_anchor = tm_now;
@@ -182,15 +191,14 @@ int calculate_next_wakeup_interval(time_t now, const rotation_config_t *rot_conf
         }
 
         long seconds_since_anchor = (long) (now - anchor_ts);
-        long next_slot_ts = anchor_ts + (seconds_since_anchor / rot_config->interval_sec + 1) *
-                                            rot_config->interval_sec;
+        long next_slot_ts = anchor_ts + (seconds_since_anchor / interval_sec + 1) * interval_sec;
 
         seconds_until_rotation = (int) (next_slot_ts - now);
 
         // Drift Protection: If we are too close to the current slot (e.g. woke up 10s early),
         // skip to the next one to avoid a tight wake loop.
         if (seconds_until_rotation < 60) {
-            seconds_until_rotation += rot_config->interval_sec;
+            seconds_until_rotation += interval_sec;
         }
     }
 
@@ -211,7 +219,7 @@ int calculate_next_wakeup_interval(time_t now, const rotation_config_t *rot_conf
         }
         time_t end_of_sleep = next_wakeup_ts + (minutes_until_end * 60 - tm_next.tm_sec);
 
-        if (!rot_config->use_anchor) {
+        if (!is_anchored) {
             return (int) (end_of_sleep - now);
         }
 
@@ -226,9 +234,8 @@ int calculate_next_wakeup_interval(time_t now, const rotation_config_t *rot_conf
             anchor_ts -= 86400;
         }
         long seconds_since_anchor = (long) (end_of_sleep - anchor_ts);
-        long intervals =
-            (seconds_since_anchor + rot_config->interval_sec - 1) / rot_config->interval_sec;
-        time_t first_slot = anchor_ts + (intervals * rot_config->interval_sec);
+        long intervals = (seconds_since_anchor + interval_sec - 1) / interval_sec;
+        time_t first_slot = anchor_ts + (intervals * interval_sec);
         return (int) (first_slot - now);
     }
 
