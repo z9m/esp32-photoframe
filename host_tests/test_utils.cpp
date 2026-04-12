@@ -20,11 +20,11 @@ class CalculateNextWakeupIntervalTest : public ::testing::Test
         sleep_config.start_minutes = 1380;  // 23:00
         sleep_config.end_minutes = 420;     // 07:00
 
-        rot_config.mode = AR_MODE_INTERVAL_H;
+        rot_config.mode = AR_MODE_INTERVAL;
         rot_config.interval_sec = 3600;
         rot_config.start_time_min = 0;
         rot_config.use_anchor = true;
-        rot_config.policy = AR_POLICY_SYNCHRONIZED_H;
+        rot_config.policy = AR_POLICY_SYNCHRONIZED;
         rot_config.last_rotation = 0;
 
         SetMockTime(0, 0, 0);

@@ -7,6 +7,7 @@
 
 #include "config.h"
 #include "esp_err.h"
+#include "testable_utils.h"
 
 esp_err_t config_manager_init(void);
 

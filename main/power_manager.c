@@ -53,10 +53,10 @@ static void rotation_timer_task(void *arg)
         if (config_manager_get_auto_rotate()) {
             time_t last_rot = (time_t) config_manager_get_last_rotation_timestamp();
             rotation_config_t rot_config = {
-                .mode = (ar_mode_h_t) config_manager_get_ar_mode(),
+                .mode = config_manager_get_ar_mode(),
                 .interval_sec = config_manager_get_rotate_interval(),
                 .start_time_min = config_manager_get_ar_start_time(),
-                .policy = (ar_policy_h_t) config_manager_get_ar_sleep_policy(),
+                .policy = config_manager_get_ar_sleep_policy(),
                 .last_rotation = last_rot,
             };
 
@@ -82,7 +82,7 @@ static void rotation_timer_task(void *arg)
                     reason = "deep sleep disabled";
                 }
                 const char *mode_str;
-                if (rot_config.mode == AR_MODE_DAILY_H) {
+                if (rot_config.mode == AR_MODE_DAILY) {
                     mode_str = "daily";
                 } else {
                     mode_str = "interval";
@@ -107,7 +107,7 @@ static void rotation_timer_task(void *arg)
                     }
 
                     const char *mode_str;
-                    if (rot_config.mode == AR_MODE_DAILY_H) {
+                    if (rot_config.mode == AR_MODE_DAILY) {
                         mode_str = "daily";
                     } else {
                         mode_str = "interval";
@@ -286,10 +286,10 @@ esp_err_t power_manager_init(void)
     if (config_manager_get_auto_rotate() && !config_manager_is_in_sleep_schedule()) {
         time_t last_rot = (time_t) config_manager_get_last_rotation_timestamp();
         rotation_config_t rot_config = {
-            .mode = (ar_mode_h_t) config_manager_get_ar_mode(),
+            .mode = config_manager_get_ar_mode(),
             .interval_sec = config_manager_get_rotate_interval(),
             .start_time_min = config_manager_get_ar_start_time(),
-            .policy = (ar_policy_h_t) config_manager_get_ar_sleep_policy(),
+            .policy = config_manager_get_ar_sleep_policy(),
             .last_rotation = last_rot,
         };
         int skip_count = is_rotation_due(time(NULL), &rot_config);

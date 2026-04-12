@@ -833,7 +833,7 @@ esp_err_t fetch_and_save_image_from_url(const char *url, char *saved_image_path,
     return ESP_OK;
 }
 
-esp_err_t trigger_image_rotation(void)
+esp_err_t trigger_image_rotation(int skip_count)
 {
     rotation_mode_t rotation_mode = config_manager_get_rotation_mode();
     esp_err_t result = ESP_OK;
@@ -859,12 +859,12 @@ esp_err_t trigger_image_rotation(void)
             result = ESP_OK;
         } else {
             ESP_LOGE(TAG, "Failed to download image from URL, falling back to local rotation");
-            display_manager_rotate_from_storage();
+            display_manager_rotate_from_storage(skip_count);
             result = ESP_FAIL;
         }
     } else {
         // Local storage mode - rotate through albums
-        display_manager_rotate_from_storage();
+        display_manager_rotate_from_storage(skip_count);
         result = ESP_OK;
     }
 
@@ -896,12 +896,17 @@ cJSON *create_battery_json(void)
 int get_seconds_until_next_wakeup(void)
 {
     time_t now;
-    struct tm timeinfo;
     time(&now);
-    localtime_r(&now, &timeinfo);
 
-    int rotate_interval = config_manager_get_rotate_interval();
-    bool aligned = config_manager_get_auto_rotate_aligned();
+    time_t last_rot = (time_t) config_manager_get_last_rotation_timestamp();
+    rotation_config_t rot_config = {
+        .mode = config_manager_get_ar_mode(),
+        .interval_sec = config_manager_get_rotate_interval(),
+        .start_time_min = config_manager_get_ar_start_time(),
+        .use_anchor = config_manager_get_auto_rotate_aligned(),
+        .policy = config_manager_get_ar_sleep_policy(),
+        .last_rotation = last_rot,
+    };
 
     sleep_schedule_config_t sleep_schedule = {
         .enabled = config_manager_get_sleep_schedule_enabled(),
@@ -909,7 +914,7 @@ int get_seconds_until_next_wakeup(void)
         .end_minutes = config_manager_get_sleep_schedule_end(),
     };
 
-    return calculate_next_wakeup_interval(&timeinfo, rotate_interval, aligned, &sleep_schedule);
+    return calculate_next_wakeup_interval(now, &rot_config, &sleep_schedule);
 }
 
 void sanitize_hostname(const char *device_name, char *hostname, size_t max_len)

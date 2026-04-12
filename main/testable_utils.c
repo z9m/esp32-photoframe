@@ -6,7 +6,7 @@ int is_rotation_due(time_t now, const rotation_config_t *config)
         return 1;  // Never rotated before
     }
 
-    if (config->mode == AR_MODE_DAILY_H) {
+    if (config->mode == AR_MODE_DAILY) {
         // Daily Mode: Always Anchored Synchronized by definition (86400s interval)
         struct tm tm_anchor;
         localtime_r(&now, &tm_anchor);
@@ -35,7 +35,7 @@ int is_rotation_due(time_t now, const rotation_config_t *config)
         return (int) ((current_slot_start - last_slot_start) / 86400);
     } else {
         // Interval Mode
-        if (config->policy == AR_POLICY_SEQUENTIAL_H) {
+        if (config->policy == AR_POLICY_SEQUENTIAL) {
             // Sequential: NEVER skip images.
             if (config->use_anchor) {
                 // Anchored Sequential: rotate if we crossed a slot boundary since last

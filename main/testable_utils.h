@@ -4,9 +4,9 @@
 #include <stdbool.h>
 #include <time.h>
 
-typedef enum { AR_MODE_INTERVAL_H = 0, AR_MODE_DAILY_H = 1 } ar_mode_h_t;
+typedef enum { AR_MODE_INTERVAL = 0, AR_MODE_DAILY = 1 } ar_mode_t;
 
-typedef enum { AR_POLICY_SYNCHRONIZED_H = 0, AR_POLICY_SEQUENTIAL_H = 1 } ar_policy_h_t;
+typedef enum { AR_POLICY_SYNCHRONIZED = 0, AR_POLICY_SEQUENTIAL = 1 } ar_policy_t;
 
 typedef struct {
     bool enabled;
@@ -15,11 +15,11 @@ typedef struct {
 } sleep_schedule_config_t;
 
 typedef struct {
-    ar_mode_h_t mode;
+    ar_mode_t mode;
     int interval_sec;
     int start_time_min;
     bool use_anchor;
-    ar_policy_h_t policy;
+    ar_policy_t policy;
     time_t last_rotation;
 } rotation_config_t;
 
